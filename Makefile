@@ -4,7 +4,7 @@ build:
 	go build -o bin/cv-api .
 
 run:
-	go run .
+	@set -a && . ./.env && set +a && go run .
 
 test:
 	go test ./...

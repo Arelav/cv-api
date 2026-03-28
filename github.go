@@ -13,6 +13,7 @@ import (
 type githubHandler struct {
 	token    string
 	username string
+	baseURL  string
 	cache    *cache[githubStats]
 }
 
@@ -53,6 +54,7 @@ func newGitHubHandler() *githubHandler {
 	return &githubHandler{
 		token:    os.Getenv("GITHUB_TOKEN"),
 		username: os.Getenv("GITHUB_USERNAME"),
+		baseURL:  "https://api.github.com",
 		cache:    newCache[githubStats](ttl),
 	}
 }
@@ -136,7 +138,7 @@ func (h *githubHandler) fetch() (githubStats, error) {
 
 func (h *githubHandler) getUser() (ghUser, error) {
 	var user ghUser
-	err := h.get(fmt.Sprintf("https://api.github.com/users/%s", h.username), &user)
+	err := h.get(fmt.Sprintf("%s/users/%s", h.baseURL, h.username), &user)
 	return user, err
 }
 
@@ -144,7 +146,7 @@ func (h *githubHandler) getRepos() ([]ghRepo, error) {
 	var all []ghRepo
 	for page := 1; ; page++ {
 		var batch []ghRepo
-		url := fmt.Sprintf("https://api.github.com/users/%s/repos?per_page=100&page=%d", h.username, page)
+		url := fmt.Sprintf("%s/users/%s/repos?per_page=100&page=%d", h.baseURL, h.username, page)
 		if err := h.get(url, &batch); err != nil {
 			return nil, err
 		}
