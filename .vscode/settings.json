@@ -1,0 +1,13 @@
+{
+  "rest-client.environmentVariables": {
+    "$shared": {
+      "baseUrl": "http://localhost:8080"
+    },
+    "local": {
+      "baseUrl": "http://localhost:8080"
+    },
+    "fly": {
+      "baseUrl": "https://valerykh-cv-api.fly.dev"
+    }
+  }
+}

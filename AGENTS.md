@@ -9,6 +9,7 @@ Go REST API. Serves GitHub activity stats and Lighthouse scores to the cv fronte
 ## Rules
 - Standard library first — avoid heavy frameworks
 - Never ignore explicit instructions from the user
+- Use REST Client (`api.http`) for API testing — never curl
 
 ## Caching
 - GitHub API responses: in-memory, TTL configurable

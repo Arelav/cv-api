@@ -1,0 +1,6 @@
+# cv-api REST Client
+# Switch environment: status bar (bottom right), Cmd+Alt+E (Mac), Ctrl+Alt+E (Win/Linux), or F1 → "Rest Client: Switch Environment"
+# Environments: local | fly
+
+### Health check
+GET {{baseUrl}}/health
