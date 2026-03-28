@@ -4,3 +4,6 @@
 
 ### Health check
 GET {{baseUrl}}/health
+
+### GitHub stats
+GET {{baseUrl}}/github/stats

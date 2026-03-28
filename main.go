@@ -8,8 +8,11 @@ import (
 )
 
 func main() {
+	gh := newGitHubHandler()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
+	mux.Handle("GET /github/stats", gh)
 
 	port := os.Getenv("PORT")
 	if port == "" {
