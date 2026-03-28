@@ -24,11 +24,20 @@ type githubStats struct {
 	Followers   int            `json:"followers"`
 	TotalStars  int            `json:"total_stars"`
 	Languages   []languageStat `json:"top_languages"`
+	TopRepos    []repoStat     `json:"top_repos"`
 }
 
 type languageStat struct {
 	Name  string `json:"name"`
 	Repos int    `json:"repos"`
+}
+
+type repoStat struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Stars       int    `json:"stars"`
+	URL         string `json:"url"`
+	Language    string `json:"language"`
 }
 
 type ghUser struct {
@@ -39,8 +48,11 @@ type ghUser struct {
 }
 
 type ghRepo struct {
+	Name            string `json:"name"`
+	Description     string `json:"description"`
 	StargazersCount int    `json:"stargazers_count"`
 	Language        string `json:"language"`
+	HTMLURL         string `json:"html_url"`
 	Fork            bool   `json:"fork"`
 }
 
@@ -126,6 +138,29 @@ func (h *githubHandler) fetch() (githubStats, error) {
 		langs[i] = languageStat{Name: kv.name, Repos: kv.count}
 	}
 
+	ownRepos := make([]ghRepo, 0, len(repos))
+	for _, r := range repos {
+		if !r.Fork {
+			ownRepos = append(ownRepos, r)
+		}
+	}
+	sort.Slice(ownRepos, func(i, j int) bool {
+		return ownRepos[i].StargazersCount > ownRepos[j].StargazersCount
+	})
+	if len(ownRepos) > 6 {
+		ownRepos = ownRepos[:6]
+	}
+	topRepos := make([]repoStat, len(ownRepos))
+	for i, r := range ownRepos {
+		topRepos[i] = repoStat{
+			Name:        r.Name,
+			Description: r.Description,
+			Stars:       r.StargazersCount,
+			URL:         r.HTMLURL,
+			Language:    r.Language,
+		}
+	}
+
 	return githubStats{
 		Username:    user.Login,
 		Name:        user.Name,
@@ -133,6 +168,7 @@ func (h *githubHandler) fetch() (githubStats, error) {
 		Followers:   user.Followers,
 		TotalStars:  totalStars,
 		Languages:   langs,
+		TopRepos:    topRepos,
 	}, nil
 }
 

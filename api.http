@@ -7,3 +7,4 @@ GET {{baseUrl}}/health
 
 ### GitHub stats
 GET {{baseUrl}}/github/stats
+Accept: application/json
