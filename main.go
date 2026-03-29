@@ -5,11 +5,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 func main() {
-	gh := newGitHubHandler()
-	lh := newLighthouseHandler()
+	outbound := &http.Client{Timeout: 2 * time.Minute}
+	gh := newGitHubHandler(outbound)
+	lh := newLighthouseHandler(outbound)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)

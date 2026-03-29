@@ -26,7 +26,7 @@ func newTestGitHubServer(t *testing.T, user ghUser, repos []ghRepo) *httptest.Se
 }
 
 func TestGitHubHandler_NoUsername(t *testing.T) {
-	h := &githubHandler{cache: newCache[githubStats](time.Hour)}
+	h := &githubHandler{client: http.DefaultClient, cache: newCache[githubStats](time.Hour)}
 
 	req := httptest.NewRequest(http.MethodGet, "/github/stats", nil)
 	w := httptest.NewRecorder()
@@ -50,6 +50,7 @@ func TestGitHubHandler_ReturnsStats(t *testing.T) {
 	defer srv.Close()
 
 	h := &githubHandler{
+		client:   http.DefaultClient,
 		username: user.Login,
 		baseURL:  srv.URL,
 		cache:    newCache[githubStats](time.Hour),
@@ -93,6 +94,7 @@ func TestGitHubHandler_UsesCache(t *testing.T) {
 	defer srv.Close()
 
 	h := &githubHandler{
+		client:   http.DefaultClient,
 		username: "testuser",
 		baseURL:  srv.URL,
 		cache:    newCache[githubStats](time.Hour),

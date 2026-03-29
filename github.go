@@ -11,6 +11,7 @@ import (
 )
 
 type githubHandler struct {
+	client   *http.Client
 	token    string
 	username string
 	baseURL  string
@@ -56,7 +57,7 @@ type ghRepo struct {
 	Fork            bool   `json:"fork"`
 }
 
-func newGitHubHandler() *githubHandler {
+func newGitHubHandler(client *http.Client) *githubHandler {
 	ttl := time.Hour
 	if s := os.Getenv("GITHUB_CACHE_TTL"); s != "" {
 		if d, err := time.ParseDuration(s); err == nil {
@@ -64,6 +65,7 @@ func newGitHubHandler() *githubHandler {
 		}
 	}
 	return &githubHandler{
+		client:   client,
 		token:    os.Getenv("GITHUB_TOKEN"),
 		username: os.Getenv("GITHUB_USERNAME"),
 		baseURL:  "https://api.github.com",
@@ -207,7 +209,7 @@ func (h *githubHandler) githubGET(url string, v any) error {
 		req.Header.Set("Authorization", "Bearer "+h.token)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := h.client.Do(req)
 	if err != nil {
 		return err
 	}

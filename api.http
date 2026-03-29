@@ -1,6 +1,7 @@
 # cv-api REST Client
 # Switch environment: status bar (bottom right), Cmd+Alt+E (Mac), Ctrl+Alt+E (Win/Linux), or F1 → "Rest Client: Switch Environment"
 # Environments: local | fly
+# /lighthouse: SITE_URL is what PageSpeed loads. If SITE_URL is "/" and the homepage is slow because SSR waits on Lighthouse (this API), PageSpeed is still trying to open "/" — that stacks and times out. Use a fast path like /resume in .env (see .env.example).
 
 ### Health check
 GET {{baseUrl}}/health
