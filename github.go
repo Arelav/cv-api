@@ -73,7 +73,7 @@ func newGitHubHandler() *githubHandler {
 
 func (h *githubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.username == "" {
-		http.Error(w, "GITHUB_USERNAME not configured", http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, "config", "GITHUB_USERNAME is not configured")
 		return
 	}
 
@@ -87,7 +87,7 @@ func (h *githubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.fetch()
 	if err != nil {
 		log.Printf("github: %v", err)
-		http.Error(w, "failed to fetch GitHub stats", http.StatusBadGateway)
+		writeAPIError(w, http.StatusBadGateway, "upstream", "Could not fetch GitHub stats. Try again later.")
 		return
 	}
 

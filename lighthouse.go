@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -70,7 +71,7 @@ func newLighthouseHandler() *lighthouseHandler {
 
 func (h *lighthouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.siteURL == "" {
-		http.Error(w, "SITE_URL not configured", http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, "config", "SITE_URL is not configured")
 		return
 	}
 
@@ -80,7 +81,7 @@ func (h *lighthouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		result, err = h.fetch()
 		if err != nil {
 			log.Printf("lighthouse: %v", err)
-			http.Error(w, "failed to fetch Lighthouse scores", http.StatusBadGateway)
+			writeAPIError(w, http.StatusBadGateway, "upstream", "Could not fetch scores from PageSpeed Insights. Try again later.")
 			return
 		}
 		h.cache.set(result)
@@ -109,12 +110,22 @@ func (h *lighthouseHandler) fetch() (lighthouseResult, error) {
 	}
 	defer resp.Body.Close()
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return lighthouseResult{}, err
+	}
+
 	if resp.StatusCode != http.StatusOK {
+		snippet := string(body)
+		if len(snippet) > 512 {
+			snippet = snippet[:512] + "…"
+		}
+		log.Printf("lighthouse: PageSpeed %s body=%s", resp.Status, snippet)
 		return lighthouseResult{}, fmt.Errorf("PageSpeed API: %s", resp.Status)
 	}
 
 	var psi psiResponse
-	if err := json.NewDecoder(resp.Body).Decode(&psi); err != nil {
+	if err := json.Unmarshal(body, &psi); err != nil {
 		return lighthouseResult{}, err
 	}
 
