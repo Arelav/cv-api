@@ -2,14 +2,29 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 )
+
+// upstreamError carries a safe client message and HTTP status for PageSpeed failures.
+type upstreamError struct {
+	status     int
+	code       string
+	message    string
+	detail     string // optional: upstream body (e.g. Google) — surfaced in JSON as "detail"
+	logMessage string
+}
+
+func (e *upstreamError) Error() string {
+	return e.logMessage
+}
 
 type lighthouseHandler struct {
 	apiKey  string
@@ -80,6 +95,12 @@ func (h *lighthouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var err error
 		result, err = h.fetch()
 		if err != nil {
+			var ue *upstreamError
+			if errors.As(err, &ue) {
+				log.Printf("lighthouse: %s", ue.logMessage)
+				writeAPIErrorDetail(w, ue.status, ue.code, ue.message, ue.detail)
+				return
+			}
 			log.Printf("lighthouse: %v", err)
 			writeAPIError(w, http.StatusBadGateway, "upstream", "Could not fetch scores from PageSpeed Insights. Try again later.")
 			return
@@ -93,6 +114,29 @@ func (h *lighthouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *lighthouseHandler) fetch() (lighthouseResult, error) {
+	const maxAttempts = 4
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			// PageSpeed often fails once on cold/slow origins; backoff before retry.
+			time.Sleep(time.Duration(attempt) * 3 * time.Second)
+		}
+		result, err := h.fetchOnce()
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		var ue *upstreamError
+		if errors.As(err, &ue) && pageSpeedIsDocumentLoadFailure(ue.detail) {
+			log.Printf("lighthouse: retry after document load failure (attempt %d/%d)", attempt+1, maxAttempts)
+			continue
+		}
+		return lighthouseResult{}, err
+	}
+	return lighthouseResult{}, lastErr
+}
+
+func (h *lighthouseHandler) fetchOnce() (lighthouseResult, error) {
 	params := url.Values{}
 	params.Set("url", h.siteURL)
 	params.Set("strategy", "mobile")
@@ -104,7 +148,12 @@ func (h *lighthouseHandler) fetch() (lighthouseResult, error) {
 		params.Set("key", h.apiKey)
 	}
 
-	resp, err := http.Get(fmt.Sprintf("%s?%s", h.baseURL, params.Encode()))
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s?%s", h.baseURL, params.Encode()), nil)
+	if err != nil {
+		return lighthouseResult{}, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return lighthouseResult{}, err
 	}
@@ -116,12 +165,7 @@ func (h *lighthouseHandler) fetch() (lighthouseResult, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		snippet := string(body)
-		if len(snippet) > 512 {
-			snippet = snippet[:512] + "…"
-		}
-		log.Printf("lighthouse: PageSpeed %s body=%s", resp.Status, snippet)
-		return lighthouseResult{}, fmt.Errorf("PageSpeed API: %s", resp.Status)
+		return lighthouseResult{}, pageSpeedHTTPError(resp.StatusCode, body)
 	}
 
 	var psi psiResponse
@@ -145,4 +189,74 @@ func (h *lighthouseHandler) fetch() (lighthouseResult, error) {
 			TTI: a.TTI.NumericValue,
 		},
 	}, nil
+}
+
+// googleAPIErrorBody matches errors returned by googleapis JSON endpoints.
+type googleAPIErrorBody struct {
+	Error struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Status  string `json:"status"`
+	} `json:"error"`
+}
+
+func pageSpeedHTTPError(httpStatus int, body []byte) error {
+	var apiErr googleAPIErrorBody
+	_ = json.Unmarshal(body, &apiErr)
+	detail := apiErr.Error.Message
+	if detail == "" {
+		detail = string(body)
+		if len(detail) > 600 {
+			detail = detail[:600] + "…"
+		}
+	}
+	logLine := fmt.Sprintf("PageSpeed HTTP %d: %s", httpStatus, detail)
+
+	if pageSpeedIsDocumentLoadFailure(detail) {
+		return &upstreamError{
+			status: http.StatusBadGateway,
+			code:   "document_request",
+			message: "PageSpeed could not load your URL from Google's network (timeout or failed fetch). " +
+				"This is not an API key problem. Check SITE_URL is the correct public https URL and that the page responds quickly; the API retries automatically on transient timeouts.",
+			detail:     detail,
+			logMessage: logLine,
+		}
+	}
+
+	switch httpStatus {
+	case http.StatusTooManyRequests: // 429
+		return &upstreamError{
+			status:     http.StatusServiceUnavailable,
+			code:       "quota",
+			message:    "PageSpeed Insights quota exceeded. Create a Google Cloud API key with the PageSpeed Insights API enabled, set PAGESPEED_API_KEY on the server, and ensure billing/quota for the project.",
+			detail:     detail,
+			logMessage: logLine,
+		}
+	case http.StatusForbidden, http.StatusBadRequest:
+		return &upstreamError{
+			status:     http.StatusBadGateway,
+			code:       "upstream",
+			message:    "PageSpeed API rejected the request. Verify PAGESPEED_API_KEY and that the PageSpeed Insights API is enabled for that key.",
+			detail:     detail,
+			logMessage: logLine,
+		}
+	default:
+		return &upstreamError{
+			status:     http.StatusBadGateway,
+			code:       "upstream",
+			message:    "Could not fetch scores from PageSpeed Insights. Try again later.",
+			detail:     detail,
+			logMessage: logLine,
+		}
+	}
+}
+
+// pageSpeedIsDocumentLoadFailure detects Lighthouse load errors (not auth/quota).
+func pageSpeedIsDocumentLoadFailure(detail string) bool {
+	d := strings.ToLower(detail)
+	return strings.Contains(d, "failed_document_request") ||
+		strings.Contains(d, "err_timed_out") ||
+		strings.Contains(d, "err_connection") ||
+		strings.Contains(d, "err_connection_refused") ||
+		strings.Contains(d, "dns_probe")
 }
