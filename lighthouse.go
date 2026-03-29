@@ -35,7 +35,7 @@ type lighthouseMetrics struct {
 }
 
 type psiCategory struct {
-	Score float64 `json:"score"` // 0.0–1.0
+	Score float64 `json:"score"`
 }
 
 type psiAudit struct {

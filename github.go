@@ -176,7 +176,7 @@ func (h *githubHandler) fetch() (githubStats, error) {
 
 func (h *githubHandler) getUser() (ghUser, error) {
 	var user ghUser
-	err := h.get(fmt.Sprintf("%s/users/%s", h.baseURL, h.username), &user)
+	err := h.githubGET(fmt.Sprintf("%s/users/%s", h.baseURL, h.username), &user)
 	return user, err
 }
 
@@ -185,7 +185,7 @@ func (h *githubHandler) getRepos() ([]ghRepo, error) {
 	for page := 1; ; page++ {
 		var batch []ghRepo
 		url := fmt.Sprintf("%s/users/%s/repos?per_page=100&page=%d", h.baseURL, h.username, page)
-		if err := h.get(url, &batch); err != nil {
+		if err := h.githubGET(url, &batch); err != nil {
 			return nil, err
 		}
 		all = append(all, batch...)
@@ -196,7 +196,7 @@ func (h *githubHandler) getRepos() ([]ghRepo, error) {
 	return all, nil
 }
 
-func (h *githubHandler) get(url string, v any) error {
+func (h *githubHandler) githubGET(url string, v any) error {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err
