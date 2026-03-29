@@ -8,3 +8,7 @@ GET {{baseUrl}}/health
 ### GitHub stats
 GET {{baseUrl}}/github/stats
 Accept: application/json
+
+### Lighthouse scores
+GET {{baseUrl}}/lighthouse
+Accept: application/json
