@@ -9,10 +9,12 @@ import (
 
 func main() {
 	gh := newGitHubHandler()
+	lh := newLighthouseHandler()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.Handle("GET /github/stats", gh)
+	mux.Handle("GET /lighthouse", lh)
 
 	port := os.Getenv("PORT")
 	if port == "" {
