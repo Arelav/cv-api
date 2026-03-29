@@ -79,6 +79,7 @@ func (h *githubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if stats, ok := h.cache.get(); ok {
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400")
 		json.NewEncoder(w).Encode(stats)
 		return
 	}
@@ -92,6 +93,7 @@ func (h *githubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	h.cache.set(stats)
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400")
 	json.NewEncoder(w).Encode(stats)
 }
 
