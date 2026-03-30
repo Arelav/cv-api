@@ -18,7 +18,7 @@ When citing existing files in chat, use Cursor-style ranges so links are jumpabl
      `jj bookmark create <feature-name> -r @` → `jj bookmark track <feature-name>` (if needed) → `jj git push --remote origin --bookmark <feature-name> --allow-new` (first push of a new bookmark).
    - **Option B — auto bookmark name:**  
      `jj git push --change @-` (or `--change @`) so jj creates/pushes a bookmark for that revision ([docs](https://docs.jj-vcs.dev/latest/github)).
-4. Open a **Pull Request** on GitHub from that branch into `main`; merge via GitHub (or `gh pr merge`), not by force-pushing your local `main` for feature work.
+4. Open a **Pull Request** in the **GitHub web UI** — not `gh` CLI. After `jj git push`, GitHub prints a link such as `https://github.com/<owner>/<repo>/pull/new/<bookmark>`. Use that (or **Compare & pull request** on the repo). Merge on GitHub when ready. Do not land feature work by force-pushing local `main`.
 
 ### Empty working copy after `jj new`
 `jj new` creates an **empty** child change on purpose. Bookmarks are **not** created automatically unless you set one or use `jj git push --change …`. If you bookmark an **empty** revision, jj may **warn** — usually you commit first, then `jj bookmark move <name> --to @` or push with `--change`.
