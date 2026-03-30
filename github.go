@@ -1,35 +1,39 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
 
 type githubHandler struct {
-	client   *http.Client
-	token    string
-	username string
-	baseURL  string
-	cache    *cache[githubStats]
-	fetchMu  sync.Mutex
+	client            *http.Client
+	token             string
+	username          string
+	baseURL           string
+	graphqlURL        string
+	maxAgeSeconds     int
+	staleWhileSeconds int
+	cache             *cache[githubStats]
+	fetchMu           sync.Mutex
 }
 
 type githubStats struct {
 	Username    string         `json:"username"`
 	Name        string         `json:"name"`
-	PublicRepos int            `json:"public_repos"`
+	PublicRepos int            `json:"publicRepos"`
 	Followers   int            `json:"followers"`
-	TotalStars  int            `json:"total_stars"`
-	Languages   []languageStat `json:"top_languages"`
-	TopRepos    []repoStat     `json:"top_repos"`
+	TotalStars  int            `json:"totalStars"`
+	Languages   []languageStat `json:"topLanguages"`
+	TopRepos    []repoStat     `json:"topRepos"`
 }
 
 type languageStat struct {
@@ -69,11 +73,14 @@ func newGitHubHandler(client *http.Client) *githubHandler {
 		}
 	}
 	return &githubHandler{
-		client:   client,
-		token:    strings.TrimSpace(os.Getenv("GITHUB_TOKEN")),
-		username: strings.TrimSpace(os.Getenv("GITHUB_USERNAME")),
-		baseURL:  "https://api.github.com",
-		cache:    newCache[githubStats](ttl),
+		client:            client,
+		token:             strings.TrimSpace(os.Getenv("GITHUB_TOKEN")),
+		username:          strings.TrimSpace(os.Getenv("GITHUB_USERNAME")),
+		baseURL:           "https://api.github.com",
+		graphqlURL:        "https://api.github.com/graphql",
+		maxAgeSeconds:     int(ttl.Seconds()),
+		staleWhileSeconds: int((24 * time.Hour).Seconds()),
+		cache:             newCache[githubStats](ttl),
 	}
 }
 
@@ -84,9 +91,7 @@ func (h *githubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if stats, ok := h.cache.get(); ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400")
-		json.NewEncoder(w).Encode(stats)
+		writeJSON(w, http.StatusOK, stats, h.maxAgeSeconds, h.staleWhileSeconds)
 		return
 	}
 
@@ -94,9 +99,7 @@ func (h *githubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer h.fetchMu.Unlock()
 
 	if stats, ok := h.cache.get(); ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400")
-		json.NewEncoder(w).Encode(stats)
+		writeJSON(w, http.StatusOK, stats, h.maxAgeSeconds, h.staleWhileSeconds)
 		return
 	}
 
@@ -108,9 +111,7 @@ func (h *githubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.cache.set(stats)
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400")
-	json.NewEncoder(w).Encode(stats)
+	writeJSON(w, http.StatusOK, stats, h.maxAgeSeconds, h.staleWhileSeconds)
 }
 
 func (h *githubHandler) fetch(ctx context.Context) (githubStats, error) {
@@ -162,20 +163,11 @@ func (h *githubHandler) fetch(ctx context.Context) (githubStats, error) {
 			ownRepos = append(ownRepos, r)
 		}
 	}
-	sort.Slice(ownRepos, func(i, j int) bool {
-		return ownRepos[i].StargazersCount > ownRepos[j].StargazersCount
-	})
-	if len(ownRepos) > 6 {
-		ownRepos = ownRepos[:6]
-	}
-	topRepos := make([]repoStat, len(ownRepos))
-	for i, r := range ownRepos {
-		topRepos[i] = repoStat{
-			Name:        r.Name,
-			Description: r.Description,
-			Stars:       r.StargazersCount,
-			URL:         r.HTMLURL,
-			Language:    r.Language,
+	topRepos := topReposByStars(ownRepos)
+	if h.token != "" {
+		pinned, err := h.getPinnedRepos(ctx)
+		if err == nil && len(pinned) > 0 {
+			topRepos = pinned
 		}
 	}
 
@@ -194,6 +186,123 @@ func (h *githubHandler) getUser(ctx context.Context) (ghUser, error) {
 	var user ghUser
 	err := h.githubGET(ctx, fmt.Sprintf("%s/users/%s", h.baseURL, h.username), &user)
 	return user, err
+}
+
+func topReposByStars(ownRepos []ghRepo) []repoStat {
+	sort.Slice(ownRepos, func(i, j int) bool {
+		return ownRepos[i].StargazersCount > ownRepos[j].StargazersCount
+	})
+	if len(ownRepos) > 6 {
+		ownRepos = ownRepos[:6]
+	}
+	out := make([]repoStat, len(ownRepos))
+	for i, r := range ownRepos {
+		out[i] = repoStat{
+			Name:        r.Name,
+			Description: r.Description,
+			Stars:       r.StargazersCount,
+			URL:         r.HTMLURL,
+			Language:    r.Language,
+		}
+	}
+	return out
+}
+
+type gqlPinnedResponse struct {
+	Data *struct {
+		User *struct {
+			PinnedItems struct {
+				Nodes []struct {
+					Name            string  `json:"name"`
+					Description     *string `json:"description"`
+					StargazerCount  int     `json:"stargazerCount"`
+					URL             string  `json:"url"`
+					PrimaryLanguage *struct {
+						Name string `json:"name"`
+					} `json:"primaryLanguage"`
+				} `json:"nodes"`
+			} `json:"pinnedItems"`
+		} `json:"user"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+func (h *githubHandler) getPinnedRepos(ctx context.Context) ([]repoStat, error) {
+	const q = `query($login: String!) {
+		user(login: $login) {
+			pinnedItems(first: 6, types: REPOSITORY) {
+				nodes {
+					... on Repository {
+						name
+						description
+						stargazerCount
+						url
+						primaryLanguage { name }
+					}
+				}
+			}
+		}
+	}`
+	body, err := json.Marshal(map[string]any{
+		"query": q,
+		"variables": map[string]string{
+			"login": h.username,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.graphqlURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+h.token)
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub GraphQL: %s", resp.Status)
+	}
+
+	var out gqlPinnedResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	if len(out.Errors) > 0 {
+		return nil, fmt.Errorf("graphql: %s", out.Errors[0].Message)
+	}
+	if out.Data == nil || out.Data.User == nil {
+		return nil, fmt.Errorf("graphql: missing user")
+	}
+	nodes := out.Data.User.PinnedItems.Nodes
+	repoStats := make([]repoStat, 0, len(nodes))
+	for _, n := range nodes {
+		desc := ""
+		if n.Description != nil {
+			desc = *n.Description
+		}
+		lang := ""
+		if n.PrimaryLanguage != nil {
+			lang = n.PrimaryLanguage.Name
+		}
+		repoStats = append(repoStats, repoStat{
+			Name:        n.Name,
+			Description: desc,
+			Stars:       n.StargazerCount,
+			URL:         n.URL,
+			Language:    lang,
+		})
+	}
+	return repoStats, nil
 }
 
 func (h *githubHandler) getRepos(ctx context.Context) ([]ghRepo, error) {

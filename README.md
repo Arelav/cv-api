@@ -1,7 +1,7 @@
 # cv-api
 
 Small Go REST API that serves:
-- `GET /github/stats` (GitHub profile/repo stats)
+- `GET /github/stats` (GitHub profile stats; **pinned** repositories when `GITHUB_TOKEN` is set, otherwise top non-fork repos by stars)
 - `GET /lighthouse` (PageSpeed Insights → Lighthouse scores)
 
 ## Secrets and token rotation (1Password-first)

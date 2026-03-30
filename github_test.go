@@ -109,3 +109,77 @@ func TestGitHubHandler_UsesCache(t *testing.T) {
 		t.Errorf("expected ≤2 API calls, got %d", calls)
 	}
 }
+
+func TestGitHubHandler_PinnedRepos(t *testing.T) {
+	user := ghUser{Login: "testuser", Name: "Test", PublicRepos: 2, Followers: 1}
+	repos := []ghRepo{
+		{Name: "lowstars", StargazersCount: 1, Language: "Go", Fork: false, HTMLURL: "https://github.com/testuser/lowstars"},
+		{Name: "highstars", StargazersCount: 100, Language: "Rust", Fork: false, HTMLURL: "https://github.com/testuser/highstars"},
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/users/"+user.Login, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(user)
+	})
+	mux.HandleFunc("/users/"+user.Login+"/repos", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(repos)
+	})
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"user": map[string]any{
+					"pinnedItems": map[string]any{
+						"nodes": []map[string]any{
+							{
+								"name":            "lowstars",
+								"description":     "pinned",
+								"stargazerCount":  1,
+								"url":             "https://github.com/testuser/lowstars",
+								"primaryLanguage": map[string]string{"name": "Go"},
+							},
+						},
+					},
+				},
+			},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	h := &githubHandler{
+		client:     http.DefaultClient,
+		token:      "test-token",
+		username:   user.Login,
+		baseURL:    srv.URL,
+		graphqlURL: srv.URL + "/graphql",
+		cache:      newCache[githubStats](time.Hour),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/github/stats", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200", w.Code)
+	}
+	var stats githubStats
+	if err := json.NewDecoder(w.Body).Decode(&stats); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(stats.TopRepos) != 1 {
+		t.Fatalf("top_repos: got %d, want 1 pinned", len(stats.TopRepos))
+	}
+	if stats.TopRepos[0].Name != "lowstars" {
+		t.Errorf("pinned repo: got %q, want lowstars", stats.TopRepos[0].Name)
+	}
+	if stats.TotalStars != 101 {
+		t.Errorf("total_stars: got %d, want 101", stats.TotalStars)
+	}
+}
