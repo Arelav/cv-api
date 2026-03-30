@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -16,6 +18,7 @@ type githubHandler struct {
 	username string
 	baseURL  string
 	cache    *cache[githubStats]
+	fetchMu  sync.Mutex
 }
 
 type githubStats struct {
@@ -86,7 +89,17 @@ func (h *githubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := h.fetch()
+	h.fetchMu.Lock()
+	defer h.fetchMu.Unlock()
+
+	if stats, ok := h.cache.get(); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400")
+		json.NewEncoder(w).Encode(stats)
+		return
+	}
+
+	stats, err := h.fetch(r.Context())
 	if err != nil {
 		log.Printf("github: %v", err)
 		writeAPIError(w, http.StatusBadGateway, "upstream", "Could not fetch GitHub stats. Try again later.")
@@ -99,13 +112,13 @@ func (h *githubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(stats)
 }
 
-func (h *githubHandler) fetch() (githubStats, error) {
-	user, err := h.getUser()
+func (h *githubHandler) fetch(ctx context.Context) (githubStats, error) {
+	user, err := h.getUser(ctx)
 	if err != nil {
 		return githubStats{}, fmt.Errorf("get user: %w", err)
 	}
 
-	repos, err := h.getRepos()
+	repos, err := h.getRepos(ctx)
 	if err != nil {
 		return githubStats{}, fmt.Errorf("get repos: %w", err)
 	}
@@ -176,18 +189,18 @@ func (h *githubHandler) fetch() (githubStats, error) {
 	}, nil
 }
 
-func (h *githubHandler) getUser() (ghUser, error) {
+func (h *githubHandler) getUser(ctx context.Context) (ghUser, error) {
 	var user ghUser
-	err := h.githubGET(fmt.Sprintf("%s/users/%s", h.baseURL, h.username), &user)
+	err := h.githubGET(ctx, fmt.Sprintf("%s/users/%s", h.baseURL, h.username), &user)
 	return user, err
 }
 
-func (h *githubHandler) getRepos() ([]ghRepo, error) {
+func (h *githubHandler) getRepos(ctx context.Context) ([]ghRepo, error) {
 	var all []ghRepo
 	for page := 1; ; page++ {
 		var batch []ghRepo
 		url := fmt.Sprintf("%s/users/%s/repos?per_page=100&page=%d", h.baseURL, h.username, page)
-		if err := h.githubGET(url, &batch); err != nil {
+		if err := h.githubGET(ctx, url, &batch); err != nil {
 			return nil, err
 		}
 		all = append(all, batch...)
@@ -198,8 +211,8 @@ func (h *githubHandler) getRepos() ([]ghRepo, error) {
 	return all, nil
 }
 
-func (h *githubHandler) githubGET(url string, v any) error {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+func (h *githubHandler) githubGET(ctx context.Context, url string, v any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}

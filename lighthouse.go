@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,6 +20,7 @@ type lighthouseHandler struct {
 	siteURL string
 	baseURL string
 	cache   *cache[lighthouseResult]
+	fetchMu sync.Mutex
 }
 
 type lighthouseResult struct {
@@ -62,15 +65,11 @@ type psiResponse struct {
 	} `json:"lighthouseResult"`
 }
 
-// newLighthouseHandler reads SITE_URL for the PageSpeed "url=" parameter. If SITE_URL is the homepage and that page
-// server-renders while awaiting GET /lighthouse on this same service, PageSpeed’s fetch of the homepage stacks behind
-// the same work and often exceeds Lighthouse’s document timeout. A path like /resume that does not block on /lighthouse
-// avoids that; see .env.example.
 func newLighthouseHandler(client *http.Client) *lighthouseHandler {
 	return &lighthouseHandler{
 		client:  client,
 		apiKey:  os.Getenv("PAGESPEED_API_KEY"),
-		siteURL: strings.TrimSpace(os.Getenv("SITE_URL")),
+		siteURL: strings.TrimSpace(os.Getenv("LIGHTHOUSE_URL")),
 		baseURL: "https://www.googleapis.com/pagespeedonline/v5/runPagespeed",
 		cache:   newCache[lighthouseResult](24 * time.Hour),
 	}
@@ -78,14 +77,24 @@ func newLighthouseHandler(client *http.Client) *lighthouseHandler {
 
 func (h *lighthouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.siteURL == "" {
-		writeAPIError(w, http.StatusInternalServerError, "config", "SITE_URL is not configured (see .env.example).")
+		writeAPIError(w, http.StatusInternalServerError, "config", "LIGHTHOUSE_URL is not configured (see .env.example).")
 		return
 	}
 
 	result, ok := h.cache.get()
 	if !ok {
+		h.fetchMu.Lock()
+		defer h.fetchMu.Unlock()
+
+		if cached, hit := h.cache.get(); hit {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800")
+			json.NewEncoder(w).Encode(cached)
+			return
+		}
+
 		var err error
-		result, err = h.fetch()
+		result, err = h.fetch(r.Context())
 		if err != nil {
 			log.Printf("lighthouse: %v", err)
 			writeAPIError(w, http.StatusBadGateway, "upstream", "Could not fetch scores from PageSpeed Insights. Try again later.")
@@ -99,7 +108,7 @@ func (h *lighthouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-func (h *lighthouseHandler) fetch() (lighthouseResult, error) {
+func (h *lighthouseHandler) fetch(ctx context.Context) (lighthouseResult, error) {
 	params := url.Values{}
 	params.Set("url", h.siteURL)
 	params.Set("strategy", "mobile")
@@ -112,7 +121,7 @@ func (h *lighthouseHandler) fetch() (lighthouseResult, error) {
 	}
 
 	reqURL := fmt.Sprintf("%s?%s", h.baseURL, params.Encode())
-	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return lighthouseResult{}, err
 	}
