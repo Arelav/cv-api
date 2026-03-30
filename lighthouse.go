@@ -26,7 +26,7 @@ type lighthouseHandler struct {
 type lighthouseResult struct {
 	Performance   float64           `json:"performance"`
 	Accessibility float64           `json:"accessibility"`
-	BestPractices float64           `json:"best_practices"`
+	BestPractices float64           `json:"bestPractices"`
 	SEO           float64           `json:"seo"`
 	Metrics       lighthouseMetrics `json:"metrics"`
 }
@@ -87,9 +87,7 @@ func (h *lighthouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer h.fetchMu.Unlock()
 
 		if cached, hit := h.cache.get(); hit {
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800")
-			json.NewEncoder(w).Encode(cached)
+			writeJSON(w, http.StatusOK, cached, 86400, 604800)
 			return
 		}
 
@@ -103,9 +101,7 @@ func (h *lighthouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.cache.set(result)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800")
-	json.NewEncoder(w).Encode(result)
+	writeJSON(w, http.StatusOK, result, 86400, 604800)
 }
 
 func (h *lighthouseHandler) fetch(ctx context.Context) (lighthouseResult, error) {
