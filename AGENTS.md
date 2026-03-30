@@ -8,10 +8,14 @@ Use Cursor-style file ranges when pointing at existing code: `@path/to/file (sta
 ## Version Control
 - Use `jj` — do not use `git` commands
 - All automated `jj` commands must include `--no-pager`
-- **Do not push feature work straight to `main` / `master`.** Use a feature bookmark (or `jj git push --change …`) and open a **GitHub PR** — see `.agents/workflow.md`.
+- **Do not push feature work straight to `main`.** Use a feature bookmark (or `jj git push --change …`) and open a **GitHub PR** — see `.agents/workflow.md`.
 - Prefer **JJ MCP** for jj operations when it is enabled in Cursor; otherwise use the `jj` CLI.
 
 @.agents/workflow.md
+
+## GitHub
+- **CI:** `.github/workflows/ci.yml` runs on push/PR to `main` — `go test ./...` (see `go.mod` for the Go version Actions uses).
+- **CodeRabbit:** install the [GitHub App](https://github.com/apps/coderabbitai) on this repository once. Configure behavior in `.coderabbit.yaml` ([docs](https://docs.coderabbit.ai/configure-coderabbit)).
 
 ## Docs & Research
 - Use **context7 MCP** for library docs — not web search first, not guessing from training data
