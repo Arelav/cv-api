@@ -3,8 +3,9 @@
 build:
 	go build -o bin/cv-api .
 
+# Use 1Password CLI to resolve op://… in .env (plain `source .env` does not).
 run:
-	@set -a && . ./.env && set +a && go run .
+	op run --env-file=.env -- go run .
 
 test:
 	go test ./...

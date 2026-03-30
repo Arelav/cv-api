@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sort"
 	"sync"
 	"time"
@@ -69,8 +70,8 @@ func newGitHubHandler(client *http.Client) *githubHandler {
 	}
 	return &githubHandler{
 		client:   client,
-		token:    os.Getenv("GITHUB_TOKEN"),
-		username: os.Getenv("GITHUB_USERNAME"),
+		token:    strings.TrimSpace(os.Getenv("GITHUB_TOKEN")),
+		username: strings.TrimSpace(os.Getenv("GITHUB_USERNAME")),
 		baseURL:  "https://api.github.com",
 		cache:    newCache[githubStats](ttl),
 	}

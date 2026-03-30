@@ -68,7 +68,7 @@ type psiResponse struct {
 func newLighthouseHandler(client *http.Client) *lighthouseHandler {
 	return &lighthouseHandler{
 		client:  client,
-		apiKey:  os.Getenv("PAGESPEED_API_KEY"),
+		apiKey:  strings.TrimSpace(os.Getenv("PAGESPEED_API_KEY")),
 		siteURL: strings.TrimSpace(os.Getenv("LIGHTHOUSE_URL")),
 		baseURL: "https://www.googleapis.com/pagespeedonline/v5/runPagespeed",
 		cache:   newCache[lighthouseResult](24 * time.Hour),
