@@ -10,6 +10,15 @@ When citing existing files in chat, use Cursor-style ranges so links are jumpabl
 - All automated `jj` commands include **`--no-pager`**.
 - Prefer **JJ MCP** (Jujutsu MCP in Cursor) for status, log, diff, bookmarks, and `git push` flows when it is configured; otherwise use **`jj`** from the terminal per `/.agents/skills/jj/SKILL.md` and [jj docs](https://docs.jj-vcs.dev/).
 
+### Sync with GitHub before new work (pull + base = `main`)
+Default branch is **`main`** (there is no `master` in these repos).
+
+1. `jj git fetch --remote origin`
+2. `jj new main` — creates a **new empty change** on top of the current **`main`** bookmark (after fetch, `main` matches `main@origin` when tracking is set). Your working copy tree matches the latest merged `main`; commit new work here.
+
+To **rebase an existing feature bookmark** onto updated `main` instead:  
+`jj rebase -d main@origin -r <bookmark-name>` (adjust revset if needed).
+
 ### Pull requests — do not land features by pushing `main`
 1. Start work on top of **`main`**: `jj new main` (creates a new change; working copy may be empty until you edit — that is normal).
 2. Make commits on your change as usual: `jj commit -m '…'` (with paths if splitting).
