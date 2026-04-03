@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/getsentry/sentry-go"
 )
 
 type lighthouseHandler struct {
@@ -77,7 +79,11 @@ func newLighthouseHandler(client *http.Client) *lighthouseHandler {
 
 func (h *lighthouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.siteURL == "" {
-		writeAPIError(w, http.StatusInternalServerError, "config", "LIGHTHOUSE_URL is not configured (see .env.example).")
+		const msg = "LIGHTHOUSE_URL is not configured (see .env.example)."
+		if hub := sentry.GetHubFromContext(r.Context()); hub != nil {
+			hub.CaptureMessage(msg)
+		}
+		writeAPIError(w, http.StatusInternalServerError, "config", msg)
 		return
 	}
 
@@ -95,7 +101,11 @@ func (h *lighthouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		result, err = h.fetch(r.Context())
 		if err != nil {
 			log.Printf("lighthouse: %v", err)
-			writeAPIError(w, http.StatusBadGateway, "upstream", "Could not fetch scores from PageSpeed Insights. Try again later.")
+			const msg = "Could not fetch scores from PageSpeed Insights. Try again later."
+			if hub := sentry.GetHubFromContext(r.Context()); hub != nil {
+				hub.CaptureException(err)
+			}
+			writeAPIError(w, http.StatusBadGateway, "upstream", msg)
 			return
 		}
 		h.cache.set(result)

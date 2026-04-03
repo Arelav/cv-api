@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/getsentry/sentry-go"
 )
 
 type githubHandler struct {
@@ -86,7 +88,11 @@ func newGitHubHandler(client *http.Client) *githubHandler {
 
 func (h *githubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.username == "" {
-		writeAPIError(w, http.StatusInternalServerError, "config", "GITHUB_USERNAME is not configured")
+		const msg = "GITHUB_USERNAME is not configured"
+		if hub := sentry.GetHubFromContext(r.Context()); hub != nil {
+			hub.CaptureMessage(msg)
+		}
+		writeAPIError(w, http.StatusInternalServerError, "config", msg)
 		return
 	}
 
@@ -106,7 +112,11 @@ func (h *githubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.fetch(r.Context())
 	if err != nil {
 		log.Printf("github: %v", err)
-		writeAPIError(w, http.StatusBadGateway, "upstream", "Could not fetch GitHub stats. Try again later.")
+		const msg = "Could not fetch GitHub stats. Try again later."
+		if hub := sentry.GetHubFromContext(r.Context()); hub != nil {
+			hub.CaptureException(err)
+		}
+		writeAPIError(w, http.StatusBadGateway, "upstream", msg)
 		return
 	}
 
