@@ -34,3 +34,13 @@ func TestCache_Expiry(t *testing.T) {
 		t.Fatal("expected cache miss after TTL")
 	}
 }
+
+func TestCache_Clear(t *testing.T) {
+	c := newCache[string](time.Hour)
+	c.set("hello")
+	c.clear()
+	_, ok := c.get()
+	if ok {
+		t.Fatal("expected cache miss after clear")
+	}
+}

@@ -10,6 +10,9 @@ GET {{baseUrl}}/health
 GET {{baseUrl}}/github/stats
 Accept: application/json
 
-### Lighthouse scores
+### Lighthouse scores (cached ~24h per Fly machine; first GET after cold start is slow)
 GET {{baseUrl}}/lighthouse
 Accept: application/json
+
+### Clear Lighthouse cache on this machine only — then GET /lighthouse refetches PageSpeed (slow). With 2+ machines, repeat or wait for TTL.
+POST {{baseUrl}}/lighthouse/invalidate

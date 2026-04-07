@@ -21,3 +21,11 @@ func writeJSON(w http.ResponseWriter, status int, v any, maxAgeSeconds, staleWhi
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+// Lighthouse responses use server-side TTL; long HTTP max-age would hide POST /lighthouse/invalidate.
+func writeJSONNoCache(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
