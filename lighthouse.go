@@ -78,10 +78,6 @@ func newLighthouseHandler(client *http.Client) *lighthouseHandler {
 }
 
 func (h *lighthouseHandler) handleInvalidate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	h.fetchMu.Lock()
 	defer h.fetchMu.Unlock()
 	h.cache.clear()
@@ -101,11 +97,15 @@ func (h *lighthouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if result, ok := h.cache.get(); ok {
+		writeJSONNoCache(w, http.StatusOK, result)
+		return
+	}
+
 	h.fetchMu.Lock()
 	defer h.fetchMu.Unlock()
 
-	result, ok := h.cache.get()
-	if ok {
+	if result, ok := h.cache.get(); ok {
 		writeJSONNoCache(w, http.StatusOK, result)
 		return
 	}
