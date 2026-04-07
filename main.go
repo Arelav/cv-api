@@ -11,6 +11,15 @@ import (
 	sentryhttp "github.com/getsentry/sentry-go/http"
 )
 
+// outboundHTTPTimeout caps upstream GitHub and PageSpeed requests.
+// WriteTimeout must exceed this so the handler can still serialize and flush
+// a response (e.g. 502) after the client hits its deadline.
+const (
+	outboundHTTPTimeout = 2 * time.Minute
+	writeTimeoutMargin  = 10 * time.Second
+	serverWriteTimeout  = outboundHTTPTimeout + writeTimeoutMargin
+)
+
 func main() {
 	if err := sentry.Init(sentry.ClientOptions{
 		Dsn: os.Getenv("SENTRY_DSN"),
@@ -19,7 +28,7 @@ func main() {
 	}
 	defer sentry.Flush(2 * time.Second)
 
-	outbound := &http.Client{Timeout: 2 * time.Minute}
+	outbound := &http.Client{Timeout: outboundHTTPTimeout}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.Handle("GET /github/stats", newGitHubHandler(outbound))
@@ -38,7 +47,7 @@ func main() {
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      2 * time.Minute,
+		WriteTimeout:      serverWriteTimeout,
 		IdleTimeout:       60 * time.Second,
 	}
 
