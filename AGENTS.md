@@ -25,9 +25,10 @@ Use Cursor-style file ranges when pointing at existing code: `@path/to/file (sta
 
 ## Caching
 - GitHub API responses: in-memory, TTL configurable
-- PageSpeed Insights responses: 24h TTL
+- Lighthouse: in-memory ~24h per process; `POST /lighthouse/invalidate` clears cache on **that** instance only (multiple Fly machines each keep their own cache)
 
-## Endpoints (planned)
+## Endpoints
 - GET /health
 - GET /github/stats
 - GET /lighthouse
+- POST /lighthouse/invalidate — clear Lighthouse cache on this instance; next `GET /lighthouse` refetches PageSpeed

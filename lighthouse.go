@@ -77,6 +77,20 @@ func newLighthouseHandler(client *http.Client) *lighthouseHandler {
 	}
 }
 
+func (h *lighthouseHandler) handleInvalidate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	h.fetchMu.Lock()
+	defer h.fetchMu.Unlock()
+	h.cache.clear()
+	log.Printf("lighthouse: cache cleared (next GET /lighthouse refetches PageSpeed on this instance)")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
 func (h *lighthouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.siteURL == "" {
 		const msg = "LIGHTHOUSE_URL is not configured (see .env.example)."
@@ -87,31 +101,27 @@ func (h *lighthouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.fetchMu.Lock()
+	defer h.fetchMu.Unlock()
+
 	result, ok := h.cache.get()
-	if !ok {
-		h.fetchMu.Lock()
-		defer h.fetchMu.Unlock()
-
-		if cached, hit := h.cache.get(); hit {
-			writeJSON(w, http.StatusOK, cached, 86400, 604800)
-			return
-		}
-
-		var err error
-		result, err = h.fetch(r.Context())
-		if err != nil {
-			log.Printf("lighthouse: %v", err)
-			const msg = "Could not fetch scores from PageSpeed Insights. Try again later."
-			if hub := sentry.GetHubFromContext(r.Context()); hub != nil {
-				hub.CaptureException(err)
-			}
-			writeAPIError(w, http.StatusBadGateway, "upstream", msg)
-			return
-		}
-		h.cache.set(result)
+	if ok {
+		writeJSONNoCache(w, http.StatusOK, result)
+		return
 	}
 
-	writeJSON(w, http.StatusOK, result, 86400, 604800)
+	result, err := h.fetch(r.Context())
+	if err != nil {
+		log.Printf("lighthouse: %v", err)
+		const msg = "Could not fetch scores from PageSpeed Insights. Try again later."
+		if hub := sentry.GetHubFromContext(r.Context()); hub != nil {
+			hub.CaptureException(err)
+		}
+		writeAPIError(w, http.StatusBadGateway, "upstream", msg)
+		return
+	}
+	h.cache.set(result)
+	writeJSONNoCache(w, http.StatusOK, result)
 }
 
 func (h *lighthouseHandler) fetch(ctx context.Context) (lighthouseResult, error) {

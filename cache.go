@@ -32,3 +32,11 @@ func (c *cache[T]) set(v T) {
 	c.value = v
 	c.expiry = time.Now().Add(c.ttl)
 }
+
+func (c *cache[T]) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var zero T
+	c.value = zero
+	c.expiry = time.Time{}
+}

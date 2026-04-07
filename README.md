@@ -2,7 +2,8 @@
 
 Small Go REST API that serves:
 - `GET /github/stats` (GitHub profile stats; **pinned** repositories when `GITHUB_TOKEN` is set, otherwise top non-fork repos by stars)
-- `GET /lighthouse` (PageSpeed Insights → Lighthouse scores)
+- `GET /lighthouse` (PageSpeed Insights → Lighthouse scores; cached ~24h per server process)
+- `POST /lighthouse/invalidate` — clears that cache on the instance that handled the request (then `GET /lighthouse` refetches)
 
 ## Secrets and token rotation (1Password-first)
 

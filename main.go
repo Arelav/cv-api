@@ -23,7 +23,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.Handle("GET /github/stats", newGitHubHandler(outbound))
-	mux.Handle("GET /lighthouse", newLighthouseHandler(outbound))
+	lh := newLighthouseHandler(outbound)
+	mux.Handle("GET /lighthouse", lh)
+	mux.HandleFunc("POST /lighthouse/invalidate", lh.handleInvalidate)
 	handler := sentryhttp.New(sentryhttp.Options{}).Handle(mux)
 
 	port := os.Getenv("PORT")
@@ -36,7 +38,7 @@ func main() {
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		WriteTimeout:      2 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 	}
 
